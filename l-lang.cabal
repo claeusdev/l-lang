@@ -25,7 +25,9 @@ source-repository head
 
 library
   exposed-modules:
+      Ast
       Lib
+      Parser
   other-modules:
       Paths_l_lang
   autogen-modules:
@@ -34,8 +36,14 @@ library
       src
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
-      base >=4.7 && <5
+      HUnit
+    , QuickCheck
+    , base >=4.7 && <5
     , containers
+    , directory
+    , filepath
+    , hspec
+    , parsec
   default-language: Haskell2010
 
 executable l-lang-exe
@@ -48,15 +56,24 @@ executable l-lang-exe
       app
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      HUnit
+    , QuickCheck
+    , base >=4.7 && <5
     , containers
+    , directory
+    , filepath
+    , hspec
     , l-lang
+    , parsec
   default-language: Haskell2010
 
 test-suite l-lang-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      ExamplePrograms
+      ParserTest
+      TestRunner
       Paths_l_lang
   autogen-modules:
       Paths_l_lang
@@ -64,7 +81,13 @@ test-suite l-lang-test
       test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      HUnit
+    , QuickCheck
+    , base >=4.7 && <5
     , containers
+    , directory
+    , filepath
+    , hspec
     , l-lang
+    , parsec
   default-language: Haskell2010
