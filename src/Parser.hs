@@ -17,8 +17,8 @@ lexer = Token.makeTokenParser style
     style =
       emptyDef
         { Token.commentLine = "#",
-          Token.reservedNames = ["lambda", "in", "let", "func"],
-          Token.reservedOpNames = ["+", "-", "*", "/", "=", "."]
+          Token.reservedNames = ["lambda", "in", "let", "func", "if", "then", "else"],
+          Token.reservedOpNames = ["+", "-", "*", "/", "=", ".", ">", "<", "=="]
         }
 
 -- Parser components - use the lexer's whitespace handling
@@ -48,6 +48,7 @@ functionDef = do
   params <- many identifier
   reservedOp "="
   body <- expr
+  whiteSpace
   -- Create a lambda abstraction that takes all parameters
   let function = foldr Fun body params
   return (name, function)
@@ -63,7 +64,7 @@ program = do
       makeEnv ((name, func) : ds) exprAst =
         Apply (Fun name (makeEnv ds exprAst)) func
   -- Parse the main expression (if there is one)
-  e <- option (Number 0) expr -- Default to 0 if no expression
+  e <- expr
   whiteSpace -- Consume trailing whitespace
   eof -- Ensure we've consumed the entire input
   -- Wrap the expression in the function definitions
@@ -71,7 +72,9 @@ program = do
 
 -- Expression parser
 expr :: Parser Expression
-expr = application
+expr = do
+  es <- many1 aexpr
+  return $ foldl1 Apply es
 
 -- Application has lower precedence than arithmetic
 application :: Parser Expression
@@ -80,9 +83,35 @@ application = do
   terms <- many1 aexpr
   return $ foldl1 Apply terms
 
+-- expressionOps
+expressionOps :: [[Operator String () Identity Expression]]
+expressionOps =
+  [ [ Infix (reservedOp ">" >> return GreaterThan) AssocLeft,
+      Infix (reservedOp "<" >> return LessThan) AssocLeft,
+      Infix (reservedOp "==" >> return Equals) AssocLeft
+    ],
+    [ Infix (reservedOp "*" >> return Multiply) AssocLeft,
+      Infix (reservedOp "/" >> return Divide) AssocLeft
+    ],
+    [ Infix (reservedOp "+" >> return Add) AssocLeft,
+      Infix (reservedOp "-" >> return Subtract) AssocLeft
+    ]
+  ]
+
 -- Arithmetic expressions
 aexpr :: Parser Expression
-aexpr = buildExpressionParser arithmeticOps term
+aexpr = buildExpressionParser expressionOps term
+
+-- if then expressions
+ifExpr :: Parser Expression
+ifExpr = do
+  reserved "if"
+  cond <- expr
+  reserved "then"
+  thenBranch <- expr
+  reserved "else"
+  elseBranch <- expr
+  return $ If cond thenBranch elseBranch
 
 -- Terms are simple expressions
 term :: Parser Expression
@@ -90,6 +119,7 @@ term =
   parens expr
     <|> Number
       <$> integer
+    <|> try ifExpr
     <|> try lambdaExpr
     <|> try letBinding
     <|> Id

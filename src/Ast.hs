@@ -12,6 +12,9 @@ data Expression
   | Fun String Expression
   | Apply Expression Expression
   | If Expression Expression Expression -- condition, then-expr, else-expr
+  | GreaterThan Expression Expression
+  | LessThan Expression Expression
+  | Equals Expression Expression
   deriving
     ( Show,
       Eq
@@ -48,3 +51,20 @@ evaluator (Apply f a) env =
   case evaluator f env of
     Closure x b fEnv -> evaluator b (Map.insert x (evaluator a env) fEnv)
     _ -> error "Type error: Cannot apply a non-function value"
+evaluator (If condition thenExpr elseExpr) env =
+  case evaluator condition env of
+    NumberValue 0 -> evaluator elseExpr env -- 0 is considered false
+    NumberValue _ -> evaluator thenExpr env -- Any non-zero value is considered true
+    _ -> error "Type error: Condition in If expression must evaluate to a number"
+evaluator (GreaterThan l r) env =
+  case (evaluator l env, evaluator r env) of
+    (NumberValue a, NumberValue b) -> NumberValue (if a > b then 1 else 0)
+    _ -> error "Type error: > expects numbers"
+evaluator (LessThan l r) env =
+  case (evaluator l env, evaluator r env) of
+    (NumberValue a, NumberValue b) -> NumberValue (if a < b then 1 else 0)
+    _ -> error "Type error: < expects numbers"
+evaluator (Equals l r) env =
+  case (evaluator l env, evaluator r env) of
+    (NumberValue a, NumberValue b) -> NumberValue (if a == b then 1 else 0)
+    _ -> error "Type error: == expects numbers"
