@@ -2,7 +2,10 @@
 
 L is a very simple untyped functional programming language based on lambda calculus for evaluating simple math expressions.
 
-This project puts a web interface to the interpreter. 
+This project puts a web interface to the interpreter.
+
+<img width="1710" alt="Screenshot 2025-05-28 at 15 22 22" src="https://github.com/user-attachments/assets/89eec9a1-ae21-4526-a25f-b5dcc605098a" />
+
 
 ## 🚀 Project Setup & Run Guide
 
