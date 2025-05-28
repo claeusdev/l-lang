@@ -1,22 +1,21 @@
-# Use a Haskell base image
-FROM haskell:9.2.8
+FROM haskell:9.8.4
 
-# Install needed system tools
-RUN apt-get update && apt-get install -y libpq-dev
-
-# Create app directory
 WORKDIR /app
 
-# Copy stack config and resolver
-COPY . /app
+# Copy stack files first to leverage Docker layer cache
+COPY stack.yaml package.yaml /app/
 
-# Download dependencies (for better caching)
+# Install compiler + deps
 RUN stack setup
-RUN stack build --install-ghc
+RUN stack build --only-dependencies
 
+# Copy the rest of the code
+COPY . /app/
 
-# Expose Heroku-assigned port (use env var in CMD)
-EXPOSE 3030
+# Build the executable
+RUN stack build
 
-# Set default command
+EXPOSE 3000
+
 CMD stack exec l-lang-exe -- -w
+
