@@ -6,7 +6,7 @@ cabal-version: 2.2
 
 name:           l-lang
 version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/githubuser/l-lang#readme>
+description:    Please see the README on GitHub at <https://github.com/claeusdev/l-lang#readme>
 homepage:       https://github.com/githubuser/l-lang#readme
 bug-reports:    https://github.com/githubuser/l-lang/issues
 author:         Author name here
@@ -26,8 +26,10 @@ source-repository head
 library
   exposed-modules:
       Ast
+      Evaluator
       Lib
       Parser
+      Value
   other-modules:
       Paths_l_lang
   autogen-modules:
@@ -35,15 +37,25 @@ library
   hs-source-dirs:
       src
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+  build-tools:
+      alex
+    , happy
   build-depends:
       HUnit
     , QuickCheck
+    , aeson
+    , array
     , base >=4.7 && <5
     , containers
     , directory
     , filepath
     , hspec
     , parsec
+    , scotty
+    , text
+    , vector
+    , wai-cors
+    , wai-extra
   default-language: Haskell2010
 
 executable l-lang-exe
@@ -58,6 +70,8 @@ executable l-lang-exe
   build-depends:
       HUnit
     , QuickCheck
+    , aeson
+    , array
     , base >=4.7 && <5
     , containers
     , directory
@@ -65,15 +79,17 @@ executable l-lang-exe
     , hspec
     , l-lang
     , parsec
+    , scotty
+    , text
+    , vector
+    , wai-cors
+    , wai-extra
   default-language: Haskell2010
 
 test-suite l-lang-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      ExamplePrograms
-      ParserTest
-      TestRunner
       Paths_l_lang
   autogen-modules:
       Paths_l_lang
@@ -83,6 +99,8 @@ test-suite l-lang-test
   build-depends:
       HUnit
     , QuickCheck
+    , aeson
+    , array
     , base >=4.7 && <5
     , containers
     , directory
@@ -90,4 +108,9 @@ test-suite l-lang-test
     , hspec
     , l-lang
     , parsec
+    , scotty
+    , text
+    , vector
+    , wai-cors
+    , wai-extra
   default-language: Haskell2010

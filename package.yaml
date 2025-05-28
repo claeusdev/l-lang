@@ -17,17 +17,24 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/l-lang#readme>
+description:         Please see the README on GitHub at <https://github.com/claeusdev/l-lang#readme>
 
 dependencies:
 - base >= 4.7 && < 5
 - containers
+- array
 - parsec
 - QuickCheck
 - hspec
 - HUnit
 - directory
 - filepath
+- scotty
+- aeson
+- text
+- vector
+- wai-cors
+- wai-extra
 
 ghc-options:
 - -Wall
@@ -42,6 +49,9 @@ ghc-options:
 
 library:
   source-dirs: src
+  build-tools:
+  - alex
+  - happy
 
 executables:
   l-lang-exe:

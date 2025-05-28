@@ -1,2 +1,1 @@
-let add = lambda x. lambda y. x + y in add 3 4
-
+result = 3 + 43 + 43 + 43 + 4

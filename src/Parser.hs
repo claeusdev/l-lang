@@ -1,186 +1,223 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Parser where
 
 import Ast
-import qualified Data.Functor
-import Data.Functor.Identity
-import qualified Data.Map as Map
-import Text.Parsec
-import Text.Parsec.Expr
-import Text.Parsec.Language (emptyDef)
-import Text.Parsec.String (Parser, parseFromFile)
-import qualified Text.Parsec.Token as Token
+import Control.Applicative
+import Control.Monad (MonadPlus (..), ap)
+import Data.Char (isAlpha, isAlphaNum, isDigit, isSpace)
 
--- Lexer definition
-lexer :: Token.TokenParser ()
-lexer = Token.makeTokenParser style
-  where
-    style =
-      emptyDef
-        { Token.commentLine = "#",
-          Token.reservedNames = ["lambda", "in", "let", "func", "if", "then", "else"],
-          Token.reservedOpNames = ["+", "-", "*", "/", "=", ".", ">", "<", "=="]
-        }
+-- ----------------------------------------------------------------------------
+-- Parser
+-- ----------------------------------------------------------------------------
 
--- Parser components - use the lexer's whitespace handling
-whiteSpace :: Parser ()
-whiteSpace = Token.whiteSpace lexer
+newtype Parser a = Parser {parse :: String -> Maybe (a, String)}
+
+instance Functor Parser where
+  fmap f (Parser p) = Parser $ \s -> do
+    (a, s') <- p s
+    return (f a, s')
+
+instance Applicative Parser where
+  pure a = Parser $ \s -> Just (a, s)
+  (<*>) = ap -- Use Control.Monad.ap for Applicative (<*>)
+
+instance Monad Parser where
+  return = pure
+  Parser p >>= f = Parser $ \s -> do
+    (a, s') <- p s
+    parse (f a) s'
+
+instance Alternative Parser where
+  empty = Parser $ \_ -> Nothing
+  Parser p1 <|> Parser p2 = Parser $ \s -> p1 s <|> p2 s
+
+instance MonadPlus Parser where
+  mzero = empty
+  mplus = (<|>)
+
+-- Basic Parser Combinators
+satisfy :: (Char -> Bool) -> Parser Char
+satisfy p = Parser $ \case
+  (c : cs) | p c -> Just (c, cs)
+  _ -> Nothing
+
+char :: Char -> Parser Char
+char c = satisfy (== c)
+
+string :: String -> Parser String
+string = traverse char
+
+-- Whitespace handling
+ws :: Parser ()
+ws = () <$ many (satisfy isSpace)
+
+token :: Parser a -> Parser a
+token p = ws *> p <* ws
+
+-- Lexemes
+identifier :: Parser String
+identifier = token $ (:) <$> satisfy isAlpha <*> many (satisfy isAlphaNum)
 
 integer :: Parser Int
-integer = Token.integer lexer Data.Functor.<&> fromIntegral
+integer = token $ read <$> some (satisfy isDigit)
 
-identifier :: Parser String
-identifier = Token.identifier lexer
-
-reserved :: String -> Parser ()
-reserved = Token.reserved lexer
-
-reservedOp :: String -> Parser ()
-reservedOp = Token.reservedOp lexer
-
-parens :: Parser a -> Parser a
-parens = Token.parens lexer
-
--- Function definition
-functionDef :: Parser (String, Expression)
-functionDef = do
-  reserved "func" -- Make sure this matches your reserved keyword
-  name <- identifier
-  params <- many identifier
-  reservedOp "="
-  body <- expr
-  whiteSpace
-  -- Create a lambda abstraction that takes all parameters
-  let function = foldr Fun body params
-  return (name, function)
-
--- Program parser - handles the entire file with proper whitespace
-program :: Parser Expression
-program = do
-  whiteSpace -- Consume initial whitespace
-  -- Parse function definitions
-  defs <- many (try functionDef)
-  -- Create an environment from the definitions
-  let makeEnv [] exprAst = exprAst -- Changed from 'expr' to 'exprAst' to fix shadowing
-      makeEnv ((name, func) : ds) exprAst =
-        Apply (Fun name (makeEnv ds exprAst)) func
-  -- Parse the main expression (if there is one)
-  e <- expr
-  whiteSpace -- Consume trailing whitespace
-  eof -- Ensure we've consumed the entire input
-  -- Wrap the expression in the function definitions
-  return $ makeEnv defs e
-
--- Expression parser
-expr :: Parser Expression
-expr = do
-  es <- many1 aexpr
-  return $ foldl1 Apply es
-
--- Application has lower precedence than arithmetic
-application :: Parser Expression
-application = do
-  -- Parse one or more terms and fold them as function applications
-  terms <- many1 aexpr
-  return $ foldl1 Apply terms
-
--- expressionOps
-expressionOps :: [[Operator String () Identity Expression]]
-expressionOps =
-  [ [ Infix (reservedOp ">" >> return GreaterThan) AssocLeft,
-      Infix (reservedOp "<" >> return LessThan) AssocLeft,
-      Infix (reservedOp "==" >> return Equals) AssocLeft
-    ],
-    [ Infix (reservedOp "*" >> return Multiply) AssocLeft,
-      Infix (reservedOp "/" >> return Divide) AssocLeft
-    ],
-    [ Infix (reservedOp "+" >> return Add) AssocLeft,
-      Infix (reservedOp "-" >> return Subtract) AssocLeft
-    ]
+-- Reserved words
+reservedWords :: [String]
+reservedWords =
+  [ "let",
+    "in",
+    "cons",
+    "head",
+    "tail",
+    "isEmpty",
+    "True",
+    "False",
+    "if",
+    "then",
+    "else" -- Added if/then/else
   ]
 
--- Arithmetic expressions
-aexpr :: Parser Expression
-aexpr = buildExpressionParser expressionOps term
-
--- if then expressions
-ifExpr :: Parser Expression
-ifExpr = do
-  reserved "if"
-  cond <- expr
-  reserved "then"
-  thenBranch <- expr
-  reserved "else"
-  elseBranch <- expr
-  return $ If cond thenBranch elseBranch
-
--- Terms are simple expressions
-term :: Parser Expression
-term =
-  parens expr
-    <|> Number
-      <$> integer
-    <|> try ifExpr
-    <|> try lambdaExpr
-    <|> try letBinding
-    <|> Id
-      <$> identifier
-
-arithmeticOps :: [[Operator String () Identity Expression]]
-arithmeticOps =
-  [ [ Infix (reservedOp "*" >> return Multiply) AssocLeft,
-      Infix (reservedOp "/" >> return Divide) AssocLeft
-    ],
-    [ Infix (reservedOp "+" >> return Add) AssocLeft,
-      Infix (reservedOp "-" >> return Subtract) AssocLeft
-    ]
-  ]
-
--- Lambda expression (Function)
-lambdaExpr :: Parser Expression
-lambdaExpr = do
-  reserved "lambda"
-  param <- identifier
-  reservedOp "."
-  Fun param <$> expr
-
--- Let binding - explicitly for your "let x = 100 in x * 2" syntax
-letBinding :: Parser Expression
-letBinding = do
-  reserved "let"
+-- Expression Parsers
+parseVar :: Parser Expr
+parseVar = do
   name <- identifier
-  reservedOp "="
-  value <- expr
-  reserved "in"
-  body <- expr
-  -- Desugar to ((\name -> body) value)
-  return $ Apply (Fun name body) value
+  if name `elem` reservedWords
+    then empty -- Fail if the identifier is a reserved word
+    else return $ Var name
 
--- Parse a string into an expression
-parseExpr :: String -> Either ParseError Expression
-parseExpr = parse program ""
+parseNum :: Parser Expr
+parseNum = Num <$> integer
 
--- Parse a file into an expression
-parseExprFile :: FilePath -> IO (Either ParseError Expression)
-parseExprFile = parseFromFile program
+parseBool :: Parser Expr
+parseBool = BoolLit <$> (True <$ token (string "True") <|> False <$ token (string "False"))
 
--- Function to get the parsed expression without evaluating
-getParsedExpr :: FilePath -> IO (Either String Expression)
-getParsedExpr path = do
-  result <- parseExprFile path
-  case result of
-    Left err -> return $ Left $ "Parse error: " ++ show err
-    Right exprAst -> return $ Right exprAst
+-- Parses one or more arguments for a lambda, creating nested Lambdas
+parseLambda :: Parser Expr
+parseLambda = do
+  _ <- token $ char '\\' <|> char 'λ' -- Allow both \ and λ
+  vars <- some identifier -- Parse one or more variable names
+  _ <- token $ string "->"
+  body <- parseExpr -- Recursively parse the body
+  -- Fold the variables into nested Lam structures
+  return $ foldr Lam body vars
 
-extractValue :: Value -> Either String Int
-extractValue (NumberValue n) = Right n
-extractValue (Closure {}) = Left "Result is a function, not a number"
+parseList :: Parser Expr
+parseList = do
+  _ <- token $ char '['
+  exprs <- parseExpr `sepBy` (token $ char ',') -- Use token for separator
+  _ <- token $ char ']'
+  return $ List exprs
 
--- Main function to interpret a file
-interpretFile :: FilePath -> IO (Either String Int)
-interpretFile path = do
-  result <- parseExprFile path
-  case result of
-    Left err -> return $ Left $ "Parse error: " ++ show err
-    Right exprAst ->
-      let value = evaluator exprAst Map.empty
-       in return $ extractValue value
+-- Helper for separated lists
+sepBy :: Parser a -> Parser sep -> Parser [a]
+sepBy p sep = ((:) <$> p <*> many (sep *> p)) <|> pure []
+
+parseLet :: Parser Expr
+parseLet = do
+  _ <- token $ string "let"
+  var <- identifier
+  _ <- token $ char '='
+  boundExpr <- parseExpr
+  _ <- token $ string "in"
+  bodyExpr <- parseExpr
+  return $ Let var boundExpr bodyExpr
+
+-- Parsers for built-in list functions using keywords for dedicated AST nodes:
+parseConsKeyword :: Parser Expr
+parseConsKeyword = do
+  _ <- token $ string "cons"
+  arg1 <- parseAtom
+  arg2 <- parseAtom
+  return $ Cons arg1 arg2
+
+parseHeadKeyword :: Parser Expr
+parseHeadKeyword = do
+  _ <- token $ string "head"
+  arg <- parseAtom
+  return $ Head arg
+
+parseTailKeyword :: Parser Expr
+parseTailKeyword = do
+  _ <- token $ string "tail"
+  arg <- parseAtom
+  return $ Tail arg
+
+parseIsEmptyKeyword :: Parser Expr
+parseIsEmptyKeyword = do
+  _ <- token $ string "isEmpty"
+  arg <- parseAtom
+  return $ IsEmpty arg
+
+-- Parenthesized expressions
+parseParen :: Parser Expr
+parseParen = token (char '(') *> parseExpr <* token (char ')')
+
+-- Basic building block (atom)
+parseAtom :: Parser Expr
+parseAtom =
+  parseNum
+    <|> parseBool
+    <|> parseVar
+    <|> parseLambda -- Multi-arg lambda included
+    <|> parseList
+    -- <|> parseLet -- Let is not usually an atom, move higher
+    <|> parseConsKeyword -- Use keyword parsers
+    <|> parseHeadKeyword
+    <|> parseTailKeyword
+    <|> parseIsEmptyKeyword
+    <|> parseParen
+
+-- Application (left-associative)
+parseApp :: Parser Expr
+parseApp = foldl1 App <$> some parseAtom -- Application is just atoms next to each other
+
+-- Operator Precedence using chainl1
+chainl1 :: Parser a -> Parser (a -> a -> a) -> Parser a
+chainl1 p op = p >>= rest
+  where
+    rest x = (do f <- op; y <- p; rest (f x y)) <|> return x
+
+-- Equality check (lowest operator precedence before if/let/lambda)
+parseEq :: Parser Expr
+parseEq = chainl1 parseAddSub (token (string "==") *> pure Eq)
+
+-- Multiplication (higher precedence)
+parseMul :: Parser Expr
+parseMul = chainl1 parseApp (token (char '*') *> pure Mul)
+
+-- Addition/Subtraction (medium precedence)
+parseAddSub :: Parser Expr
+parseAddSub =
+  chainl1 parseMul $
+    (token (char '+') *> pure Add) <|> (token (char '-') *> pure Sub)
+
+-- If-Then-Else parser
+parseIf :: Parser Expr
+parseIf = do
+  _ <- token $ string "if"
+  cond <- parseExpr -- Parse condition
+  _ <- token $ string "then"
+  thenBranch <- parseExpr -- Parse then branch
+  _ <- token $ string "else"
+  elseBranch <- parseExpr -- Parse else branch
+  return $ IfThenElse cond thenBranch elseBranch
+
+-- Top-level expression parser: handles let, lambda, if, and falls back to operators/atoms
+parseExpr :: Parser Expr
+parseExpr =
+  parseIf -- Try parsing 'if' first
+    <|> parseLet -- Try 'let'
+    <|> parseLambda -- Try lambda (already handled in atom, but could be here too)
+    <|> parseEq -- Then equality and other operators
+
+-- Parser for top-level definitions ( name = expression )
+-- Consumes the whole line if it matches this pattern.
+parseDefinition :: Parser (String, Expr)
+parseDefinition = do
+  name <- identifier
+  _ <- token $ char '='
+  expr <- parseExpr
+  -- Check that there's nothing left on the line after the expression
+  ws -- Consume trailing whitespace if any
+  Parser $ \rest -> if null rest then Just ((name, expr), "") else Nothing

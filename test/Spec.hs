@@ -1,216 +1,257 @@
-{-# OPTIONS_GHC -Wno-missing-signatures #-}
-{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+-- Suppress warnings for unused imports if any during development
+{-# OPTIONS_GHC -w #-}
+
+module Main where
 
 import Ast
-import Control.Exception
 import qualified Data.Map as Map
-import Parser
-import qualified ParserTest
+import Evaluator (eval, initialEnv)
+import Parser (Parser (parse), parseExpr)
 import Test.HUnit
-import qualified TestRunner
+import Value
 
--- Helper function to create test environment
-env :: [(String, Value)] -> Environment
-env = Map.fromList
+-- Helper function to parse an input string and evaluate the resulting expression.
+-- It discards the trace log, focusing on the resulting value or error.
+evalTest :: String -> Either String Value
+evalTest inputStr =
+  case parse parseExpr inputStr of
+    Nothing -> Left "TEST_ERROR: Parser failed to parse the input string."
+    Just (expr, "") ->
+      -- Successfully parsed and consumed all input
+      case eval initialEnv expr of
+        Left errMsg -> Left errMsg
+        Right (val, _traceLog) -> Right val -- Discard trace log for simplicity in tests
+    Just (expr, rest) -> Left ("TEST_ERROR: Parser did not consume entire input. Remainder: " ++ rest)
 
--- Some useful abbreviations for expressions
-num :: Int -> Expression
-num = Number
+-- Test Cases
 
-add :: Expression -> Expression -> Expression
-add = Add
+-- 1. Literal Evaluation Tests
+testEvalNum :: Test
+testEvalNum = "evaluate number" ~: Right (VNum 42) ~=? evalTest "42"
 
-sub :: Expression -> Expression -> Expression
-sub = Subtract
+testEvalNumZero :: Test
+testEvalNumZero = "evaluate zero" ~: Right (VNum 0) ~=? evalTest "0"
 
-mul :: Expression -> Expression -> Expression
-mul = Multiply
+-- The parser for 'Num' expects only digits. "0-5" is parsed as Sub (Num 0) (Num 5).
+testEvalNegativeNumExpr :: Test
+testEvalNegativeNumExpr = "evaluate negative number expression" ~: Right (VNum (-5)) ~=? evalTest "0-5"
 
-div :: Expression -> Expression -> Expression
-div = Divide
+-- "-5" by itself should be a parse error with the current parser.
+testParseNegativeNumDirectly :: Test
+testParseNegativeNumDirectly = "parse -5 directly (should fail)" ~: Left "TEST_ERROR: Parser failed to parse the input string." ~=? evalTest "-5"
 
-var :: String -> Expression
-var = Id
+testEvalTrue :: Test
+testEvalTrue = "evaluate True" ~: Right (VBool True) ~=? evalTest "True"
 
-lambda :: String -> Expression -> Expression
-lambda = Fun
+testEvalFalse :: Test
+testEvalFalse = "evaluate False" ~: Right (VBool False) ~=? evalTest "False"
 
-app :: Expression -> Expression -> Expression
-app = Apply
+-- 2. Arithmetic Operation Tests
+testAdd :: Test
+testAdd = "evaluate 1 + 2" ~: Right (VNum 3) ~=? evalTest "1 + 2"
 
--- Examples of simple expressions
-simpleNum :: Expression
-simpleNum = Number 5
+testSub :: Test
+testSub = "evaluate 5 - 2" ~: Right (VNum 3) ~=? evalTest "5 - 2"
 
-simpleAdd = Add (Number 3) (Number 4)
+testMul :: Test
+testMul = "evaluate 3 * 4" ~: Right (VNum 12) ~=? evalTest "3 * 4"
 
-simpleSub = Subtract (Number 10) (Number 4)
+testArithmeticPrecedence :: Test
+testArithmeticPrecedence = "evaluate 1 + 2 * 3 (precedence)" ~: Right (VNum 7) ~=? evalTest "1 + 2 * 3"
 
-simpleMul :: Expression
-simpleMul = Multiply (Number 3) (Number 5)
+testArithmeticParentheses :: Test
+testArithmeticParentheses = "evaluate (1 + 2) * 3 (parentheses)" ~: Right (VNum 9) ~=? evalTest "(1 + 2) * 3"
 
-simpleDiv :: Expression
-simpleDiv = Divide (Number 20) (Number 4)
+testArithmeticLeftAssociativity :: Test
+testArithmeticLeftAssociativity = "evaluate 10 - 3 - 2 (left-associativity)" ~: Right (VNum 5) ~=? evalTest "10 - 3 - 2"
 
-simpleId :: Expression
-simpleId = Id "x"
+-- 3. Equality Operation Tests
+testEqNumTrue :: Test
+testEqNumTrue = "evaluate 5 == 5" ~: Right (VBool True) ~=? evalTest "5 == 5"
 
--- Examples of more complex expressions
-complexExpr1 = Add (Multiply (Number 2) (Number 3)) (Number 5) -- 2*3+5 = 11
+testEqNumFalse :: Test
+testEqNumFalse = "evaluate 5 == 3" ~: Right (VBool False) ~=? evalTest "5 == 3"
 
-complexExpr2 = Subtract (Multiply (Number 10) (Number 2)) (Number 5) -- 10*2-5 = 15
+testEqBoolTrue :: Test
+testEqBoolTrue = "evaluate True == True" ~: Right (VBool True) ~=? evalTest "True == True"
 
-complexExpr3 = Divide (Add (Number 8) (Number 4)) (Number 3) -- (8+4)/3 = 4
+testEqBoolFalse :: Test
+testEqBoolFalse = "evaluate True == False" ~: Right (VBool False) ~=? evalTest "True == False"
 
--- Function examples
-identityFn = Fun "x" (Id "x") -- λx.x
+testEqMixedTypes :: Test
+testEqMixedTypes = "evaluate 1 == False (mixed types)" ~: Right (VBool False) ~=? evalTest "1 == False"
 
-constFn = Fun "x" (Fun "y" (Id "x")) -- λx.λy.x
+testEqEmptyLists :: Test
+testEqEmptyLists = "evaluate [] == []" ~: Right (VBool True) ~=? evalTest "[] == []"
 
-addFn = Fun "x" (Fun "y" (Add (Id "x") (Id "y"))) -- λx.λy.x+y
+testEqListsTrue :: Test
+testEqListsTrue = "evaluate [1,2] == [1,2]" ~: Right (VBool True) ~=? evalTest "[1,2] == [1,2]" -- Assuming parser takes comma separated
 
--- Application examples
-applyId = Apply identityFn (Number 42) -- (λx.x) 42 = 42
+testEqListsFalse :: Test
+testEqListsFalse = "evaluate [1,2] == [1,3]" ~: Right (VBool False) ~=? evalTest "[1,2] == [1,3]"
 
-applyConst = Apply (Apply constFn (Number 5)) (Number 10) -- (λx.λy.x) 5 10 = 5
+-- 4. Let Expression Tests
+testLetSimple :: Test
+testLetSimple = "evaluate let x = 10 in x" ~: Right (VNum 10) ~=? evalTest "let x = 10 in x"
 
-applyAdd = Apply (Apply addFn (Number 3)) (Number 4) -- (λx.λy.x+y) 3 4 = 7
+testLetCalculation :: Test
+testLetCalculation = "evaluate let x = 5 in x + x" ~: Right (VNum 10) ~=? evalTest "let x = 5 in x + x"
 
--- Let binding examples (desugared to lambda applications)
-letExpr1 = Apply (Fun "x" (Add (Id "x") (Number 1))) (Number 5) -- let x = 5 in x + 1 = 6
+testLetNested :: Test
+testLetNested = "evaluate let x = 3 in let y = 4 in x + y" ~: Right (VNum 7) ~=? evalTest "let x = 3 in let y = 4 in x + y"
 
-letExpr2 = Apply (Fun "x" (Apply (Fun "y" (Add (Id "x") (Id "y"))) (Number 2))) (Number 3) -- let x = 3 in let y = 2 in x + y = 5
+testLetShadowing :: Test
+testLetShadowing = "evaluate let x = 1 in let x = 2 in x" ~: Right (VNum 2) ~=? evalTest "let x = 1 in let x = 2 in x"
 
--- Basic test list
-basicTests =
+testLetVarUndefinedInBody :: Test
+testLetVarUndefinedInBody = "let x = 5 in y (y undefined)" ~: Left "Undefined variable: y" ~=? evalTest "let x = 5 in y"
+
+-- 5. Variable Lookup Test
+testVarUndefined :: Test
+testVarUndefined = "evaluate undefined variable" ~: Left "Undefined variable: myVar" ~=? evalTest "myVar"
+
+-- 6. If-Then-Else Expression Tests
+testIfTrueBranch :: Test
+testIfTrueBranch = "evaluate if True then 100 else 200" ~: Right (VNum 100) ~=? evalTest "if True then 100 else 200"
+
+testIfFalseBranch :: Test
+testIfFalseBranch = "evaluate if False then 100 else 200" ~: Right (VNum 200) ~=? evalTest "if False then 100 else 200"
+
+testIfCondEqTrue :: Test
+testIfCondEqTrue = "evaluate if 1 == 1 then 1 else 0" ~: Right (VNum 1) ~=? evalTest "if 1 == 1 then 1 else 0"
+
+testIfCondEqFalse :: Test
+testIfCondEqFalse = "evaluate if 1 == 0 then 1 else 0" ~: Right (VNum 0) ~=? evalTest "if 1 == 0 then 1 else 0"
+
+testIfCondTypeErr :: Test
+testIfCondTypeErr = "if 1 then 10 else 20 (type error in condition)" ~: Left "Type Error: 'if' condition must evaluate to a Boolean." ~=? evalTest "if 1 then 10 else 20"
+
+-- 7. Type Error Tests for Operations
+testAddTypeErrNumBool :: Test
+testAddTypeErrNumBool = "evaluate 1 + True (type error)" ~: Left "Type Error: + expects numbers. Got 1 and True" ~=? evalTest "1 + True"
+
+testAddTypeErrBoolNum :: Test
+testAddTypeErrBoolNum = "evaluate False + 2 (type error)" ~: Left "Type Error: + expects numbers. Got False and 2" ~=? evalTest "False + 2"
+
+testMulTypeErrBoolBool :: Test
+testMulTypeErrBoolBool = "evaluate True * False (type error)" ~: Left "Type Error: * expects numbers. Got True and False" ~=? evalTest "True * False"
+
+-- 8. List Literal and Operation Tests
+testEvalEmptyList :: Test
+testEvalEmptyList = "evaluate []" ~: Right (VList []) ~=? evalTest "[]"
+
+testEvalNumList :: Test
+testEvalNumList = "evaluate [1, 2, 3]" ~: Right (VList [VNum 1, VNum 2, VNum 3]) ~=? evalTest "[1, 2, 3]"
+
+testEvalMixedList :: Test
+testEvalMixedList = "evaluate [1, True, []]" ~: Right (VList [VNum 1, VBool True, VList []]) ~=? evalTest "[1, True, []]"
+
+testCons :: Test
+testCons = "evaluate cons 1 [2,3]" ~: Right (VList [VNum 1, VNum 2, VNum 3]) ~=? evalTest "cons 1 [2,3]"
+
+testConsToEmpty :: Test
+testConsToEmpty = "evaluate cons 1 []" ~: Right (VList [VNum 1]) ~=? evalTest "cons 1 []"
+
+testHead :: Test
+testHead = "evaluate head [1,2,3]" ~: Right (VNum 1) ~=? evalTest "head [1,2,3]"
+
+testTail :: Test
+testTail = "evaluate tail [1,2,3]" ~: Right (VList [VNum 2, VNum 3]) ~=? evalTest "tail [1,2,3]"
+
+testIsEmptyTrue :: Test
+testIsEmptyTrue = "evaluate isEmpty []" ~: Right (VBool True) ~=? evalTest "isEmpty []"
+
+testIsEmptyFalse :: Test
+testIsEmptyFalse = "evaluate isEmpty [1]" ~: Right (VBool False) ~=? evalTest "isEmpty [1]"
+
+-- 9. List Error Condition Tests
+testConsTypeError :: Test
+testConsTypeError = "cons 1 2 (type error)" ~: Left "Type Error: Second argument to 'cons' must be a list." ~=? evalTest "cons 1 2"
+
+testHeadEmptyListError :: Test
+testHeadEmptyListError = "head [] (runtime error)" ~: Left "Runtime Error: Cannot take head of an empty list." ~=? evalTest "head []"
+
+testHeadTypeError :: Test
+testHeadTypeError = "head 1 (type error)" ~: Left "Type Error: 'head' requires a list argument." ~=? evalTest "head 1"
+
+testTailEmptyListError :: Test
+testTailEmptyListError = "tail [] (runtime error)" ~: Left "Runtime Error: Cannot take tail of an empty list." ~=? evalTest "tail []"
+
+testTailTypeError :: Test
+testTailTypeError = "tail False (type error)" ~: Left "Type Error: 'tail' requires a list argument." ~=? evalTest "tail False"
+
+testIsEmptyTypeError :: Test
+testIsEmptyTypeError = "isEmpty 0 (type error)" ~: Left "Type Error: 'isEmpty' requires a list argument." ~=? evalTest "isEmpty 0"
+
+-- 10. Complex Expression Test
+testComplexLetIfArith :: Test
+testComplexLetIfArith = "complex let/if/arithmetic" ~: Right (VNum 15) ~=? evalTest "let x = 10 in if x == 10 then (let y = x * 2 in y - 5) else 0"
+
+-- 11. Parser Error Propagation Tests (via evalTest helper)
+testParseErrorUnbalancedParen :: Test
+testParseErrorUnbalancedParen = "parser error (unbalanced paren)" ~: Left "TEST_ERROR: Parser failed to parse the input string." ~=? evalTest "(1 + 2"
+
+testParseErrorInvalidToken :: Test
+testParseErrorInvalidToken = "parser error (invalid token)" ~: Left "TEST_ERROR: Parser did not consume entire input. Remainder: + #" ~=? evalTest "1 + #"
+
+-- List of all tests to run
+tests :: Test
+tests =
   TestList
-    [ "test_eval_number" ~: evaluator (Number 42) Map.empty ~?= NumberValue 42,
-      "test_eval_addition" ~: evaluator simpleAdd Map.empty ~?= NumberValue 7
+    [ TestLabel "testEvalNum" testEvalNum,
+      TestLabel "testEvalNumZero" testEvalNumZero,
+      TestLabel "testEvalNegativeNumExpr" testEvalNegativeNumExpr,
+      TestLabel "testParseNegativeNumDirectly" testParseNegativeNumDirectly,
+      TestLabel "testEvalTrue" testEvalTrue,
+      TestLabel "testEvalFalse" testEvalFalse,
+      TestLabel "testAdd" testAdd,
+      TestLabel "testSub" testSub,
+      TestLabel "testMul" testMul,
+      TestLabel "testArithmeticPrecedence" testArithmeticPrecedence,
+      TestLabel "testArithmeticParentheses" testArithmeticParentheses,
+      TestLabel "testArithmeticLeftAssociativity" testArithmeticLeftAssociativity,
+      TestLabel "testEqNumTrue" testEqNumTrue,
+      TestLabel "testEqNumFalse" testEqNumFalse,
+      TestLabel "testEqBoolTrue" testEqBoolTrue,
+      TestLabel "testEqBoolFalse" testEqBoolFalse,
+      TestLabel "testEqMixedTypes" testEqMixedTypes,
+      TestLabel "testEqEmptyLists" testEqEmptyLists,
+      TestLabel "testEqListsTrue" testEqListsTrue,
+      TestLabel "testEqListsFalse" testEqListsFalse,
+      TestLabel "testLetSimple" testLetSimple,
+      TestLabel "testLetCalculation" testLetCalculation,
+      TestLabel "testLetNested" testLetNested,
+      TestLabel "testLetShadowing" testLetShadowing,
+      TestLabel "testLetVarUndefinedInBody" testLetVarUndefinedInBody,
+      TestLabel "testVarUndefined" testVarUndefined,
+      TestLabel "testIfTrueBranch" testIfTrueBranch,
+      TestLabel "testIfFalseBranch" testIfFalseBranch,
+      TestLabel "testIfCondEqTrue" testIfCondEqTrue,
+      TestLabel "testIfCondEqFalse" testIfCondEqFalse,
+      TestLabel "testIfCondTypeErr" testIfCondTypeErr,
+      TestLabel "testAddTypeErrNumBool" testAddTypeErrNumBool,
+      TestLabel "testAddTypeErrBoolNum" testAddTypeErrBoolNum,
+      TestLabel "testMulTypeErrBoolBool" testMulTypeErrBoolBool,
+      TestLabel "testEvalEmptyList" testEvalEmptyList,
+      TestLabel "testEvalNumList" testEvalNumList,
+      TestLabel "testEvalMixedList" testEvalMixedList,
+      TestLabel "testCons" testCons,
+      TestLabel "testConsToEmpty" testConsToEmpty,
+      TestLabel "testHead" testHead,
+      TestLabel "testTail" testTail,
+      TestLabel "testIsEmptyTrue" testIsEmptyTrue,
+      TestLabel "testIsEmptyFalse" testIsEmptyFalse,
+      TestLabel "testConsTypeError" testConsTypeError,
+      TestLabel "testHeadEmptyListError" testHeadEmptyListError,
+      TestLabel "testHeadTypeError" testHeadTypeError,
+      TestLabel "testTailEmptyListError" testTailEmptyListError,
+      TestLabel "testTailTypeError" testTailTypeError,
+      TestLabel "testIsEmptyTypeError" testIsEmptyTypeError,
+      TestLabel "testComplexLetIfArith" testComplexLetIfArith,
+      TestLabel "testParseErrorUnbalancedParen" testParseErrorUnbalancedParen,
+      TestLabel "testParseErrorInvalidToken" testParseErrorInvalidToken
     ]
 
--- Tests for the evaluator
-evalTests =
-  TestList
-    [ "test_eval_subtraction" ~: evaluator simpleSub Map.empty ~?= NumberValue 6,
-      "test_eval_multiplication" ~: evaluator simpleMul Map.empty ~?= NumberValue 15,
-      "test_eval_division" ~: evaluator simpleDiv Map.empty ~?= NumberValue 5,
-      "test_eval_id_found" ~: evaluator simpleId (env [("x", NumberValue 10)]) ~?= NumberValue 10,
-      "test_eval_complex1" ~: evaluator complexExpr1 Map.empty ~?= NumberValue 11,
-      "test_eval_complex2" ~: evaluator complexExpr2 Map.empty ~?= NumberValue 15,
-      "test_eval_complex3" ~: evaluator complexExpr3 Map.empty ~?= NumberValue 4,
-      "test_eval_identity" ~: evaluator applyId Map.empty ~?= NumberValue 42,
-      "test_eval_const" ~: evaluator applyConst Map.empty ~?= NumberValue 5,
-      "test_eval_add_fn" ~: evaluator applyAdd Map.empty ~?= NumberValue 7,
-      "test_eval_let1" ~: evaluator letExpr1 Map.empty ~?= NumberValue 6,
-      "test_eval_let2" ~: evaluator letExpr2 Map.empty ~?= NumberValue 5
-    ]
-
--- Tests for the parser
-parserTests :: Test
-parserTests =
-  TestList
-    [ "test_parse_number" ~: parseExpr "42" ~?= Right (Number 42),
-      "test_parse_addition" ~: parseExpr "3 + 4" ~?= Right (Add (Number 3) (Number 4)),
-      "test_parse_subtraction" ~: parseExpr "10 - 4" ~?= Right (Subtract (Number 10) (Number 4)),
-      "test_parse_multiplication" ~: parseExpr "3 * 5" ~?= Right (Multiply (Number 3) (Number 5)),
-      "test_parse_division" ~: parseExpr "20 / 4" ~?= Right (Divide (Number 20) (Number 4)),
-      "test_parse_compound" ~: parseExpr "2 * 3 + 5" ~?= Right (Add (Multiply (Number 2) (Number 3)) (Number 5)),
-      "test_parse_parentheses" ~: parseExpr "2 * (3 + 5)" ~?= Right (Multiply (Number 2) (Add (Number 3) (Number 5))),
-      "test_parse_lambda" ~: parseExpr "lambda x. x" ~?= Right (Fun "x" (Id "x")),
-      "test_parse_nested_lambda" ~: parseExpr "lambda x. lambda y. x" ~?= Right (Fun "x" (Fun "y" (Id "x"))),
-      "test_parse_application" ~: parseExpr "f x" ~?= Right (Apply (Id "f") (Id "x")),
-      "test_parse_multi_application" ~: parseExpr "f x y" ~?= Right (Apply (Apply (Id "f") (Id "x")) (Id "y")),
-      "test_parse_let" ~: parseExpr "let x = 5 in x + 1" ~?= Right (Apply (Fun "x" (Add (Id "x") (Number 1))) (Number 5))
-    ]
-
--- Error handling tests
-errorTests :: Test
-errorTests =
-  TestList
-    [ "test_eval_id_not_found" ~: TestCase $ do
-        result <- try (evaluate (evaluator simpleId Map.empty))
-        case result of
-          Left (SomeException _) -> return ()
-          Right _ -> assertFailure "Expected an exception for undefined variable"
-    ]
-
--- Environment tests
-envTests :: Test
-envTests =
-  TestList
-    [ "test_eval_nested_env"
-        ~: evaluator
-          ( Apply
-              (Fun "x" (Add (Id "x") (Id "y")))
-              (Number 5)
-          )
-          (env [("y", NumberValue 3)])
-        ~?= NumberValue 8,
-      "test_nested_environments"
-        ~: evaluator
-          ( Apply
-              ( Fun
-                  "x"
-                  ( Apply
-                      (Fun "y" (Add (Id "x") (Id "y")))
-                      (Number 3)
-                  )
-              )
-              (Number 5)
-          )
-          Map.empty
-        ~?= NumberValue 8,
-      "test_shadowing"
-        ~: evaluator
-          ( Apply
-              ( Fun
-                  "x"
-                  ( Apply
-                      (Fun "x" (Id "x"))
-                      (Number 10)
-                  )
-              )
-              (Number 5)
-          )
-          Map.empty
-        ~?= NumberValue 10
-    ]
-
--- Advanced parser tests
-advancedParserTests :: Test
-advancedParserTests =
-  TestList
-    [ "test_mult_precedence" ~: parseExpr "2 + 3 * 4" ~?= Right (Add (Number 2) (Multiply (Number 3) (Number 4))),
-      "test_div_precedence" ~: parseExpr "10 - 8 / 2" ~?= Right (Subtract (Number 10) (Divide (Number 8) (Number 2))),
-      "test_chained_addition" ~: parseExpr "1 + 2 + 3" ~?= Right (Add (Add (Number 1) (Number 2)) (Number 3)),
-      "test_chained_subtraction" ~: parseExpr "10 - 5 - 2" ~?= Right (Subtract (Subtract (Number 10) (Number 5)) (Number 2)),
-      "test_mixed_ops1" ~: parseExpr "2 * 3 + 4 * 5" ~?= Right (Add (Multiply (Number 2) (Number 3)) (Multiply (Number 4) (Number 5))),
-      "test_apply_with_arithmetic" ~: parseExpr "f (x + y)" ~?= Right (Apply (Id "f") (Add (Id "x") (Id "y"))),
-      "test_let_with_arithmetic"
-        ~: parseExpr "let x = 10 in x * 2 + 5"
-        ~?= Right (Apply (Fun "x" (Add (Multiply (Id "x") (Number 2)) (Number 5))) (Number 10))
-    ]
-
--- Combine all tests
-allTests :: Test
-allTests =
-  TestList
-    [ basicTests,
-      evalTests,
-      parserTests,
-      errorTests,
-      envTests,
-      advancedParserTests,
-      ParserTest.tests,
-      TestRunner.runnerTests
-    ]
-
--- Run all tests
-runEvalTests :: IO Counts
-runEvalTests = runTestTT allTests
-
--- Main function for test runner
-main :: IO ()
-main = do
-  counts <- runEvalTests
-  return ()
+-- Main function to run the tests
+main :: IO Counts
+main = runTestTT tests
