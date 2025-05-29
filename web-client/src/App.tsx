@@ -39,6 +39,7 @@ export default function App() {
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [errors, setErrors] = useState<Array<LintError>>([]);
   const [showSnippets, setShowSnippets] = useState(false);
+  const [evalLogs, setEvalLogs] = useState([]);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -147,6 +148,7 @@ export default function App() {
       setEnv(responseData.finalEnvironment);
       setSteps(responseData.steps);
       setError(responseData.finalError);
+      setEvalLogs(responseData.traceLog);
 
       if (responseData.finalError) {
         toast.error("Evaluation completed with errors", {
@@ -209,7 +211,7 @@ export default function App() {
       newSnippets = [...snippets, { title: snippetName, code }];
     } else {
       const oldSnippets = snippets.filter(
-        (s) => s.title !== existingSnippet.title
+        (s) => s.title !== existingSnippet.title,
       );
       newSnippets = [...oldSnippets, { title: existingSnippet.title, code }];
     }
@@ -225,7 +227,7 @@ export default function App() {
 
   const handleSelectSnippet = (title: string) => {
     const foundSnippet: Snippet | undefined = snippets.find(
-      (s) => s.title === title
+      (s) => s.title === title,
     );
     if (foundSnippet) {
       setCode(foundSnippet.code);
@@ -350,12 +352,10 @@ export default function App() {
   };
 
   const formatEvalSteps = () => {
-    if (result && result.length > 0) {
+    if (evalLogs && evalLogs.length > 0) {
       let output = "> Evaluation steps:\n\n";
-      result.forEach((step, index) => {
-        output = `${output}Step ${index + 1}:\n`;
-        output = `${output}AST: ${step.ast}\n`;
-        output = `${output}Output: ${step.output}\n\n`;
+      evalLogs.forEach((step) => {
+        output = `${output} ${step}\n`;
       });
       return output;
     }
@@ -392,15 +392,15 @@ export default function App() {
                   isEvaluating
                     ? "secondary"
                     : errors?.some((e) => e.type === "error")
-                    ? "destructive"
-                    : "default"
+                      ? "destructive"
+                      : "default"
                 }
               >
                 {isEvaluating
                   ? "Evaluating..."
                   : errors?.some((e) => e.type === "error")
-                  ? "Error"
-                  : "Ready"}
+                    ? "Error"
+                    : "Ready"}
               </Badge>
               {!isEvaluating && errors && errors.length === 0 && (
                 <CheckCircle className="w-4 h-4 text-green-500" />
