@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import Editor from "@monaco-editor/react";
 import {
   AlertCircle,
   CheckCircle,
@@ -511,16 +511,23 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex-1 p-4">
-            <Textarea
+          <div className="flex-1 pt-4">
+            <Editor
               value={code}
-              onChange={(e) => setCode(e.target.value)}
-              className="w-full h-full resize-none border-0 rounded-none outline-none shadow-none focus-visible:ring-0 font-mono text-sm"
-              style={{
+              onChange={(value) => setCode(value || "")}
+              height="100%"
+              defaultLanguage="plaintext"
+              options={{
+                fontSize: 14,
                 fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
-                minHeight: "500px",
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                automaticLayout: true,
+                wordWrap: "on",
+                lineNumbers: "on",
+                renderLineHighlight: "none",
+                selectOnLineNumbers: true,
               }}
-              placeholder="Write your L language code here..."
             />
           </div>
         </div>
