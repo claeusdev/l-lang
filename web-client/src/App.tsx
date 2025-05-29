@@ -654,7 +654,7 @@ export default function App() {
       <div className="bg-gray-100 border-t border-gray-200 px-4 py-2 text-xs text-gray-600">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <span>L Programming Language v1.0.0</span>
+            <span>L Programming Language Playground</span>
             <span>•</span>
             <span>{isEvaluating ? "Evaluating..." : "Ready"}</span>
           </div>
