@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Toaster, toast } from "sonner";
+import { mockEvaluate, isStandaloneMode } from "./services/mock-api";
+import { sampleSnippets } from "./data/sample-snippets";
 
 export type Snippet = { title: string; code: string };
 
@@ -67,8 +69,13 @@ export default function App() {
   useEffect(() => {
     const snips = window.localStorage.getItem("snippets");
     if (!snips) {
-      window.localStorage.setItem("snippets", JSON.stringify([]));
-      setSnippets([]);
+      // Load sample snippets if no saved snippets exist
+      const initialSnippets = sampleSnippets.slice(0, 3).map(sample => ({
+        title: sample.title,
+        code: sample.code
+      }));
+      setSnippets(initialSnippets);
+      window.localStorage.setItem("snippets", JSON.stringify(initialSnippets));
     } else {
       setSnippets(JSON.parse(snips));
     }
@@ -97,74 +104,96 @@ export default function App() {
     setIsEvaluating(true);
     setError("");
 
-    toast.loading("Evaluating code...", {
-      id: "evaluation",
-      description: "Sending code to L language server",
-    });
-
-    const controller = new AbortController();
-    const signal = controller.signal;
-
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-    }, 5000);
-
+    let timeoutId: NodeJS.Timeout | undefined;
+    
     try {
-      const res = await fetch("http://localhost:3000/evaluate", {
-        method: "post",
-        body: code,
-        signal: signal,
-        headers: {
-          "Content-Type": "text/plain;charset=UTF-8",
-        },
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!res.ok) {
-        let errorMsg = `Server error: ${res.status} ${res.statusText}`;
-        try {
-          const errorBody = await res.text();
-          if (errorBody) {
-            errorMsg = `${errorMsg} - ${errorBody}`;
-          }
-        } catch {
-          // Ignore error while reading error body
-        }
-        setError(errorMsg);
-        setEnv({});
-        setSteps([]);
-
-        toast.error("Evaluation failed", {
+      if (isStandaloneMode()) {
+        toast.loading("Evaluating code...", {
           id: "evaluation",
-          description: errorMsg,
-          duration: 4000,
+          description: "Running L language interpreter (offline mode)",
         });
-        return;
-      }
 
-      const responseData = await res.json();
+        const result = await mockEvaluate(code);
+        setEnv({});
+        setSteps([result]);
+        setError("");
 
-      setEnv(responseData.finalEnvironment);
-      setSteps(responseData.steps);
-      setError(responseData.finalError);
-      setEvalLogs(responseData.traceLog);
-
-      if (responseData.finalError) {
-        toast.error("Evaluation completed with errors", {
+        toast.success("Code evaluated successfully", {
           id: "evaluation",
-          description: responseData.finalError,
-          duration: 4000,
+          description: "L language code executed in offline mode",
+          duration: 2000,
         });
       } else {
-        toast.success("Code evaluated successfully!", {
+        toast.loading("Evaluating code...", {
           id: "evaluation",
-          description: `Generated ${responseData.steps?.length || 0} steps`,
-          duration: 3000,
+          description: "Sending code to L language server",
         });
+
+        const controller = new AbortController();
+        const signal = controller.signal;
+
+        timeoutId = setTimeout(() => {
+          controller.abort();
+        }, 5000);
+
+        const res = await fetch("http://localhost:3000/evaluate", {
+          method: "post",
+          body: code,
+          signal: signal,
+          headers: {
+            "Content-Type": "text/plain;charset=UTF-8",
+          },
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!res.ok) {
+          let errorMsg = `Server error: ${res.status} ${res.statusText}`;
+          try {
+            const errorBody = await res.text();
+            if (errorBody) {
+              errorMsg = `${errorMsg} - ${errorBody}`;
+            }
+          } catch {
+            // Ignore error while reading error body
+          }
+          setError(errorMsg);
+          setEnv({});
+          setSteps([]);
+
+          toast.error("Evaluation failed", {
+            id: "evaluation",
+            description: errorMsg,
+            duration: 4000,
+          });
+          return;
+        }
+
+        const responseData = await res.json();
+
+        setEnv(responseData.finalEnvironment);
+        setSteps(responseData.steps);
+        setError(responseData.finalError);
+        setEvalLogs(responseData.traceLog);
+
+        if (responseData.finalError) {
+          toast.error("Evaluation completed with errors", {
+            id: "evaluation",
+            description: responseData.finalError,
+            duration: 4000,
+          });
+        } else {
+          toast.success("Code evaluated successfully!", {
+            id: "evaluation",
+            description: `Generated ${responseData.steps?.length || 0} steps`,
+            duration: 3000,
+          });
+        }
       }
     } catch (err) {
-      clearTimeout(timeoutId);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
 
       if (err instanceof Error && err.name === "AbortError") {
         const timeoutMsg =
