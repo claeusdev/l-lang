@@ -4,14 +4,22 @@ import path from "node:path";
 import { defineConfig } from "vite";
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  server: {
-    host: true,
-  },
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
+export default defineConfig(({ mode }) => {
+  return {
+    plugins: [react(), tailwindcss()],
+    server: {
+      host: true,
     },
-  },
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
+      },
+    },
+    // Load specific .env file for standalone mode
+    envDir: '.',
+    define: {
+      // Make environment variables available in the client
+      __STANDALONE_MODE__: mode === 'standalone',
+    },
+  };
 });
