@@ -1,0 +1,18 @@
+{
+  "name": "l-lang-vercel",
+  "version": "1.0.0",
+  "description": "L Language interpreter deployed to Vercel",
+  "scripts": {
+    "build": "cd web-client && npm run build:standalone",
+    "build:haskell": "./build-haskell.sh",
+    "dev": "cd web-client && npm run dev",
+    "start": "cd web-client && npm run serve:standalone",
+    "vercel-build": "npm run build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "vercel": "^32.0.0"
+  }
+}
